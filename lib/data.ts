@@ -95,3 +95,11 @@ export async function getThreadReplies({ messageId }: { messageId: string }) {
   });
   return replies;
 }
+
+export async function getMessage({ messageId }: { messageId: string }) {
+  const message = await prisma.archiveMessage.findUniqueOrThrow({
+    include: { user: true },
+    where: { id: messageId },
+  });
+  return message;
+}
