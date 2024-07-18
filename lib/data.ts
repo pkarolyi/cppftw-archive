@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { MessageType } from "@prisma/client";
+import { MessageWithUserAndChannel } from "@/types/prisma";
+import { Message, MessageType } from "@prisma/client";
 import "server-only";
 
 export async function getChannels() {
@@ -7,9 +8,21 @@ export async function getChannels() {
   return channels;
 }
 
+export async function getGeneralChannel() {
+  const channel = await prisma.channel.findFirst({
+    where: { isGeneral: true },
+  });
+  return channel;
+}
+
 export async function getChannelName({ id }: { id: string }) {
   const channel = await prisma.channel.findUnique({ where: { id } });
   return channel?.name;
+}
+
+export async function getUser({ id }: { id: string }) {
+  const user = await prisma.user.findUnique({ where: { id } });
+  return user;
 }
 
 export async function getLatestMessageIsoDate() {
@@ -23,7 +36,6 @@ const onlyToplevelMessages = {
   OR: [{ type: MessageType.NORMAL }, { type: MessageType.THREAD_PARENT }],
 };
 
-// This function returns the page that contains the message with the given ts
 export async function getMessagePageFromTs({
   channelId,
   take,
@@ -91,23 +103,13 @@ export async function getChannelMessagesCount({
 export async function searchMessages({ term }: { term?: string }) {
   if (!term) return [];
 
-  const messages = await prisma.message.findMany({
-    where: {
-      AND: [
-        {
-          OR: [
-            { text: { contains: term } },
-            { isoDate: { contains: term } },
-            { user: { name: { contains: term } } },
-          ],
-        },
-        onlyToplevelMessages,
-      ],
-    },
-    orderBy: { ts: "asc" },
-    include: { user: true, channel: true },
-    take: 100,
-  });
+  const messages = await prisma.$queryRaw`
+    SELECT *,  FROM "Message"
+    JOIN "User" ON "Message"."userId" = "User"."id"
+    JOIN "Channel" ON "Message"."channelId" = "Channel"."id"
+    WHERE to_tsvector('english', "Message"."text") @@ to_tsquery('english', ${term})
+    ORDER BY ts ASC 
+    LIMIT 100;`;
 
-  return messages;
+  return messages as MessageWithUserAndChannel[];
 }
